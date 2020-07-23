@@ -14,6 +14,7 @@
 
 """Utilities to support running lifecycle phases."""
 import collections
+import copy
 import importlib
 import logging
 import os
@@ -325,6 +326,105 @@ def get_before_deploy_steps():
     """
     return _concat_model_alias_maps(
         get_charm_config().get('before_deploy', []))
+
+
+def get_target_deploy_status_steps():
+    """Get target_deploy_status messages and their associated model aliases.
+
+    Version 1 of the format is a global state, valid for all models mapped:
+
+    target_deploy_status:
+        vault:
+            workload-status: Blocked
+            workload-status-message: Vault is not initialised
+        nova-cloud-controller:
+            workload-status: Blocked
+            workload-status-message: Missing relations
+
+    Version 2 of the format supports model aliasing in the same way as other
+    sections in tests.yaml (if no model alias is passed, 'default_alias' will
+    be used):
+
+    target_deploy_status:
+        - bionic:
+            vault:
+                workload-status: blocked
+                workload-status-message: Vault is not initialised
+            glance:
+                workload-status: blocked
+                workload-status: Missing relations
+        - nova-cloud-controller:
+            workload-status: Blocked
+            workload-status-message: Missing relations
+
+    returns: A dict mapping target states to model aliases
+    :rtype: Dict[str, List[dict]]
+    """
+    target_deploy_status = get_charm_config().get('target_deploy_status', [])
+    if isinstance(target_deploy_status, dict):
+        # Format v1 (Legacy format) is a keymap without model aliasing
+        # returns a list so we know it's generic for all models mapped
+        return [target_deploy_status]
+
+    # Format v2, supports model aliasing
+    # returns a dict and relocates all applications that don't have an
+    # explicit model alias to the default one
+    d_target_states = {DEFAULT_MODEL_ALIAS: {}}
+    for item in target_deploy_status:
+        if not isinstance(item, dict):
+            continue
+
+        for app_or_model in item.keys():
+            for workloadkey_or_app in item[app_or_model].keys():
+                if isinstance(item[app_or_model][workloadkey_or_app],
+                              dict):
+                    # Explicit model alias passed
+                    # {model: {app: {workload: str}}}
+                    model_name = app_or_model
+                    d_target_states.update(
+                        {model_name: item[model_name]}
+                    )
+                else:
+                    # No model alias specified (use the default)
+                    # {default_alias: {app: {workload: str}}}
+                    appname = app_or_model
+                    d_target_states[DEFAULT_MODEL_ALIAS].update(
+                        {appname: d_target_states[appname]}
+                    )
+                    # multiple keys refer to:
+                    #   workload-status, workload-status-message
+                    break
+
+    return d_target_states
+
+
+def get_apps_states(model, model_ctxt):
+    """Return a dict of application states.
+
+    @param model: name of the Juju model being deployed
+    @type model: str
+    @param model_ctxt: map of model aliases and model names (as seen on other
+                       sections of tests.yaml)
+    @type model_ctxt: dict
+    @returns application names and their states for a specific alias, or global
+    @rtype dict
+    """
+    target_deploy_status = get_target_deploy_status_steps()
+    apps_states = {}
+    if isinstance(target_deploy_status, list) and target_deploy_status:
+        # Version 1 of the format (global states)
+        apps_states = target_deploy_status[0]
+    else:
+        # Version 2 of the format (model aliasing support)
+        if not model_ctxt:
+            model_ctxt = {}
+        for model_alias, model_name in model_ctxt.items():
+            if (model_name == model and
+                    target_deploy_status.get(model_alias)):
+                for states in target_deploy_status[model_alias]:
+                    apps_states.update(states)
+                break
+    return apps_states
 
 
 def get_charm_config(yaml_file=None, fatal=True):

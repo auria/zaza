@@ -368,7 +368,7 @@ def deploy(bundle, model, wait=True, model_ctxt=None, force=False):
     run_report.register_event_finish('Deploy Bundle')
     if wait:
         run_report.register_event_start('Wait for Deployment')
-        test_config = utils.get_charm_config()
+        apps_states = utils.get_apps_states(model, model_ctxt)
         logging.info("Waiting for environment to settle")
         zaza.model.set_juju_model(model)
         deploy_ctxt = deployment_env.get_deployment_context()
@@ -377,7 +377,7 @@ def deploy(bundle, model, wait=True, model_ctxt=None, force=False):
             timeout))
         zaza.model.wait_for_application_states(
             model,
-            test_config.get('target_deploy_status', {}),
+            apps_states,
             timeout=timeout)
         run_report.register_event_finish('Wait for Deployment')
 

@@ -16,6 +16,7 @@ import jinja2
 import mock
 
 import zaza.charm_lifecycle.deploy as lc_deploy
+import zaza.charm_lifecycle.utils as lc_utils
 import zaza.utilities.exceptions as zaza_exceptions
 import unit_tests.utils as ut_utils
 
@@ -393,15 +394,17 @@ class TestCharmLifecycleDeploy(ut_utils.BaseTestCase):
     def test_deploy_bespoke_states(self):
         self.patch_object(lc_deploy.zaza.model, 'wait_for_application_states')
         self.patch_object(lc_deploy.utils, 'get_charm_config')
+        vault_state = {'vault': {
+            'workload-status': 'blocked',
+            'workload-status-message': 'Vault needs to be inited'}}
         self.get_charm_config.return_value = {
-            'target_deploy_status': {
-                'vault': {
-                    'workload-status': 'blocked',
-                    'workload-status-message': 'Vault needs to be inited'}}}
+            'target_deploy_status': vault_state,
+        }
+        model_ctxt = {lc_utils.DEFAULT_MODEL_ALIAS: 'newmodel'}
         self.patch_object(lc_deploy, 'deploy_bundle')
-        lc_deploy.deploy('bun.yaml', 'newmodel')
+        lc_deploy.deploy('bun.yaml', 'newmodel', model_ctxt=model_ctxt)
         self.deploy_bundle.assert_called_once_with('bun.yaml', 'newmodel',
-                                                   model_ctxt=None,
+                                                   model_ctxt=model_ctxt,
                                                    force=False)
         self.wait_for_application_states.assert_called_once_with(
             'newmodel',
